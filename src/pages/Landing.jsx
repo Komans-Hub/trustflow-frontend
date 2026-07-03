@@ -65,7 +65,7 @@ export default function Landing() {
               <span className="font-display font-semibold text-sm text-white/40 uppercase tracking-widest">
                 Secure Checkout
               </span>
-              <TrustBadge tier="GOLD" size="sm" />
+              <TrustBadge tier="GOLD" size="md" />
             </div>
             <p className="font-display font-semibold text-lg mb-1">Nike Air Force 1 '07</p>
             <p className="font-mono text-cyan text-2xl font-bold mb-4">₦ 65,000</p>

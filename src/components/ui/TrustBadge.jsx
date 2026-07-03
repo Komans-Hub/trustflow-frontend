@@ -1,27 +1,34 @@
+import React from 'react';
+import bronzeIcon from '../../assets/bronze_image.png';
+import silverIcon from '../../assets/silver_image.png';
+import goldIcon from '../../assets/gold_image.png';
+import platinumIcon from '../../assets/platinum_image.png';
+
 const TIER_CONFIG = {
-  BRONZE:   { color: '#CD7F32', bg: 'rgba(205,127,50,0.12)',  icon: '🥉', label: 'Bronze'   },
-  SILVER:   { color: '#A8A9AD', bg: 'rgba(168,169,173,0.12)', icon: '🥈', label: 'Silver'   },
-  GOLD:     { color: '#FFD700', bg: 'rgba(255,215,0,0.12)',   icon: '🥇', label: 'Gold'     },
-  PLATINUM: { color: '#E5E4E2', bg: 'rgba(229,228,226,0.12)', icon: '💎', label: 'Platinum' },
+  BRONZE: { icon: bronzeIcon, label: 'Bronze' , bg: 'transparent'},
+  SILVER: { icon: silverIcon, label: 'Silver' },
+  GOLD: { icon: goldIcon, label: 'Gold' },
+  PLATINUM: { icon: platinumIcon, label: 'Platinum' },
 };
 
-export default function TrustBadge({ tier = 'BRONZE', size = 'md', showLabel = true }) {
+export default function TrustBadge({ tier = 'BRONZE', size = 'md' }) {
   const cfg = TIER_CONFIG[tier] || TIER_CONFIG.BRONZE;
 
   const sizes = {
-    sm: { badge: 'px-2 py-0.5 text-xs gap-1', icon: 'text-sm' },
-    md: { badge: 'px-3 py-1 text-sm gap-1.5',  icon: 'text-base' },
-    lg: { badge: 'px-4 py-2 text-base gap-2',  icon: 'text-xl' },
+    sm: 'h-10',
+    md: 'h-14', 
+    lg: 'h-20',
   };
-  const s = sizes[size] || sizes.md;
+
+  const heightClass = sizes[size] || sizes.md;
 
   return (
-    <span
-      className={`inline-flex items-center rounded-full font-display font-semibold ${s.badge}`}
-      style={{ color: cfg.color, background: cfg.bg, border: `1px solid ${cfg.color}40` }}
-    >
-      <span className={s.icon}>{cfg.icon}</span>
-      {showLabel && <span>{cfg.label}</span>}
-    </span>
+    <div className="flex items-center justify-center w-full fallback-layout">
+      <img 
+    src={cfg.icon} 
+    alt={`${cfg.label} Badge`} 
+    className={`${heightClass} w-auto object-contain inline-block mix-blend-screen`} 
+  />
+    </div>
   );
 }
