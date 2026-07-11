@@ -1,40 +1,36 @@
 import { useState, useEffect } from 'react';
 import { useParams } from 'react-router-dom';
-import { Shield, CheckCircle, AlertCircle, ChevronRight, Lock } from 'lucide-react';
+import { Shield, CheckCircle, AlertCircle, Lock, ChevronRight } from 'lucide-react';
 import api from '../api/client';
 import TrustBadge from '../components/ui/TrustBadge';
 import StarRating from '../components/ui/StarRating';
 
 const STATE_COPY = {
-  CREATED:   { headline: 'Secure checkout',          sub: 'Your payment is held in escrow until delivery.' },
-  PAID:      { headline: 'Payment confirmed',         sub: 'Your funds are held safely. Awaiting shipment.' },
-  SHIPPED:   { headline: 'Your order is on its way',  sub: 'The seller has shipped your item.' },
-  DELIVERED: { headline: 'Delivered',                 sub: 'Confirm receipt to release funds to the seller.' },
-  RELEASED:  { headline: 'Transaction complete',      sub: 'Funds have been released. Thank you for using TrustFlow.' },
-  DISPUTED:  { headline: 'Dispute raised',            sub: 'Our team is reviewing this transaction.' },
+  CREATED:   { headline: 'Secure checkout',          sub: 'Your payment is held in escrow until delivery is confirmed.' },
+  PAID:      { headline: 'Payment confirmed',         sub: 'Your funds are held safely. Awaiting shipment from seller.' },
+  SHIPPED:   { headline: 'Your order is on its way', sub: 'The seller has shipped your item.' },
+  DELIVERED: { headline: 'Item delivered',           sub: 'Confirm receipt to release payment to the seller.' },
+  RELEASED:  { headline: 'Transaction complete',     sub: 'Funds released. Thank you for using TrustFlow.' },
+  DISPUTED:  { headline: 'Dispute raised',           sub: 'Our team will review this transaction shortly.' },
 };
 
-function formatKobo(kobo) {
-  return `₦ ${(Number(kobo) / 100).toLocaleString('en-NG', { minimumFractionDigits: 2 })}`;
+function formatKobo(k) {
+  return `₦ ${(Number(k)/100).toLocaleString('en-NG',{minimumFractionDigits:0})}`;
 }
 
 export default function Checkout() {
   const { token } = useParams();
-
-  const [data,    setData]    = useState(null);
-  const [loading, setLoading] = useState(true);
-  const [error,   setError]   = useState('');
-
-  // Payment form
-  const [step,     setStep]     = useState('review'); // review | form | done
-  const [form,     setForm]     = useState({ buyer_name: '', buyer_email: '', buyer_phone: '' });
-  const [paying,   setPaying]   = useState(false);
-  const [payError, setPayError] = useState('');
-
-  // Dispute form
-  const [disputing, setDisputing] = useState(false);
+  const [data,       setData]       = useState(null);
+  const [loading,    setLoading]    = useState(true);
+  const [error,      setError]      = useState('');
+  const [step,       setStep]       = useState('review');
+  const [form,       setForm]       = useState({ buyer_name: '', buyer_email: '', buyer_phone: '' });
+  const [paying,     setPaying]     = useState(false);
+  const [payError,   setPayError]   = useState('');
+  const [disputing,  setDisputing]  = useState(false);
   const [disputeReason, setDisputeReason] = useState('');
-  const [disputeSubmitting, setDisputeSubmitting] = useState(false);
+  const [disputeSub, setDisputeSub] = useState(false);
+  const [confirmed,  setConfirmed]  = useState(false);
 
   useEffect(() => {
     api.get(`/transactions/${token}`)
@@ -50,252 +46,263 @@ export default function Checkout() {
     setPaying(true); setPayError('');
     try {
       await api.post(`/transactions/${token}/pay`, form);
-      // Re-fetch to get updated state
+      const res = await api.get(`/transactions/${token}`);
+      setData(res.data); setStep('done');
+    } catch(e) { setPayError(e.response?.data?.error || 'Payment failed. Please try again.'); }
+    finally { setPaying(false); }
+  };
+
+  const handleConfirm = async () => {
+    setConfirmed(true);
+    try {
+      await api.post(`/transactions/${data.transaction.id}/confirm`, { buyer_email: data.transaction.buyer_email });
       const res = await api.get(`/transactions/${token}`);
       setData(res.data);
-      setStep('done');
-    } catch (e) {
-      setPayError(e.response?.data?.error || 'Payment failed. Please try again.');
-    } finally {
-      setPaying(false);
-    }
+    } catch(e) { alert(e.response?.data?.error || 'Failed.'); setConfirmed(false); }
   };
 
   const handleDispute = async () => {
     if (!disputeReason.trim()) return;
-    setDisputeSubmitting(true);
+    setDisputeSub(true);
     try {
       await api.post(`/transactions/${data.transaction.id}/dispute`, {
-        reason: disputeReason,
-        buyer_email: data.transaction.buyer_email,
+        reason: disputeReason, buyer_email: data.transaction.buyer_email,
       });
       const res = await api.get(`/transactions/${token}`);
-      setData(res.data);
-      setDisputing(false);
-    } catch (e) {
-      alert(e.response?.data?.error || 'Failed to raise dispute.');
-    } finally {
-      setDisputeSubmitting(false);
-    }
+      setData(res.data); setDisputing(false);
+    } catch(e) { alert(e.response?.data?.error || 'Failed.'); }
+    finally { setDisputeSub(false); }
   };
 
   if (loading) return (
-    <main className="min-h-screen flex items-center justify-center">
-      <span className="w-6 h-6 border-2 border-white/10 border-t-cyan rounded-full animate-spin" />
+    <main className="min-h-screen bg-cloud flex items-center justify-center">
+      <div className="flex flex-col items-center gap-md">
+        <div className="w-8 h-8 border-2 border-hairline border-t-primary rounded-full animate-spin"/>
+        <p className="font-body text-caption-md text-ink-soft anim-fade-up">Loading checkout…</p>
+      </div>
     </main>
   );
 
   if (error) return (
-    <main className="min-h-screen flex items-center justify-center px-6">
-      <div className="text-center max-w-sm">
-        <AlertCircle size={40} className="text-red-400 mx-auto mb-4" />
-        <h1 className="font-display font-bold text-xl mb-2">Link not found</h1>
-        <p className="text-white/40 font-body text-sm">{error}</p>
+    <main className="min-h-screen bg-cloud flex items-center justify-center px-lg">
+      <div className="text-center anim-scale-in">
+        <AlertCircle size={40} className="text-red-400 mx-auto mb-md"/>
+        <h1 className="font-display text-display-sm text-ink mb-sm">Link not found</h1>
+        <p className="font-body text-body-md text-ink-soft">{error}</p>
       </div>
     </main>
   );
 
   const { transaction: tx, seller } = data;
   const stateCopy = STATE_COPY[tx.state] || STATE_COPY.CREATED;
-  const isPayable = tx.state === 'CREATED';
-  const isShipped = tx.state === 'SHIPPED';
-  const isComplete = ['RELEASED', 'DISPUTED'].includes(tx.state);
+  const isPayable  = tx.state === 'CREATED';
+  const isShipped  = tx.state === 'SHIPPED';
+  const isComplete = ['RELEASED','DISPUTED'].includes(tx.state);
 
   return (
-    <main className="min-h-screen flex flex-col items-center justify-start pt-8 pb-20 px-4">
+    <main className="min-h-screen bg-cloud flex flex-col items-center pt-xxl pb-section px-md">
 
-      {/* TrustFlow watermark */}
-      <div className="mb-8 flex items-center gap-2">
-        <Shield size={16} className="text-cyan" />
-        <span className="font-display font-semibold text-sm text-gradient">TrustFlow</span>
-        <span className="text-white/20 text-xs font-mono">· Escrow Protected</span>
+      {/* TrustFlow header */}
+      <div className="flex items-center gap-sm mb-xl anim-fade-up">
+        <div className="w-8 h-8 bg-primary rounded-md flex items-center justify-center
+                        transition-transform duration-300 hover:scale-110 cursor-default">
+          <Shield size={14} className="text-white"/>
+        </div>
+        <span className="font-display font-semibold text-ink text-base">TrustFlow</span>
+        <span className="font-body text-caption-sm text-ink-soft">· Escrow Protected</span>
       </div>
 
-      <div className="w-full max-w-sm space-y-4 animate-fade-up">
+      <div className="w-full max-w-sm space-y-md">
 
-        {/* ── Seller Trust Card — the "receipt header" ──────────────────── */}
-        <div className="card border-glow p-5">
-          <div className="flex items-start justify-between mb-4">
+        {/* Seller trust card */}
+        <div className="card p-lg anim-fade-up" style={{ animationDelay: '0.05s' }}>
+          <div className="flex items-start justify-between mb-lg">
             <div>
-              <p className="font-display font-bold text-base">{seller.name}</p>
-              <div className="flex items-center gap-2 mt-1">
-                <TrustBadge tier={seller.tier} size="sm" />
-                <StarRating score={Number(seller.trust_score)} size="sm" />
+              <p className="font-display text-display-sm text-ink mb-xs">{seller.name}</p>
+              <div className="flex items-center gap-sm">
+                <div className="anim-badge-pop" style={{ animationDelay: '0.2s' }}>
+                  <TrustBadge tier={seller.tier} size="sm"/>
+                </div>
+                <StarRating score={Number(seller.trust_score)} size="sm"/>
               </div>
             </div>
-            {/* Verified shield */}
-            <div className="flex flex-col items-center gap-0.5">
-              <div className="w-10 h-10 rounded-full flex items-center justify-center"
-                   style={{ background: 'rgba(34,211,238,0.1)', border: '1px solid rgba(34,211,238,0.2)' }}>
-                <Shield size={18} className="text-cyan" />
+            <div className="flex flex-col items-center gap-xs">
+              <div className="w-10 h-10 bg-hairline rounded-full flex items-center justify-center
+                              anim-badge-pop" style={{ animationDelay: '0.25s' }}>
+                <Shield size={16} className="text-primary"/>
               </div>
-              <span className="text-cyan text-[10px] font-mono">Verified</span>
+              <span className="font-body text-caption-sm text-primary anim-fade-up"
+                    style={{ animationDelay: '0.3s' }}>Verified</span>
             </div>
           </div>
 
-          {/* Divider — receipt aesthetic */}
-          <div className="border-t border-dashed border-white/10 my-4" />
+          <div className="border-t border-dashed border-hairline my-md"/>
 
-          <div className="space-y-2">
-            <div className="flex justify-between text-sm">
-              <span className="text-white/40 font-body">Item</span>
-              <span className="font-display font-medium text-right max-w-[180px] truncate">
+          <div className="space-y-sm stagger-children">
+            <div className="flex justify-between anim-fade-up">
+              <span className="font-body text-caption-md text-ink-soft">Item</span>
+              <span className="font-body text-caption-md text-ink font-medium truncate max-w-[180px]">
                 {tx.item_description}
               </span>
             </div>
-            <div className="flex justify-between text-sm">
-              <span className="text-white/40 font-body">Sales</span>
-              <span className="font-body">{seller.transaction_count} completed</span>
+            <div className="flex justify-between anim-fade-up">
+              <span className="font-body text-caption-md text-ink-soft">Completed sales</span>
+              <span className="font-body text-caption-md text-ink">{seller.transaction_count}</span>
             </div>
             {seller.remaining_to_next && (
-              <div className="flex justify-between text-sm">
-                <span className="text-white/40 font-body">Next tier</span>
-                <span className="font-body text-white/50">
+              <div className="flex justify-between anim-fade-up">
+                <span className="font-body text-caption-md text-ink-soft">Next tier</span>
+                <span className="font-body text-caption-md text-ink-soft">
                   {seller.remaining_to_next} more → {seller.next_tier}
                 </span>
               </div>
             )}
           </div>
 
-          <div className="border-t border-dashed border-white/10 my-4" />
+          <div className="border-t border-dashed border-hairline my-md"/>
 
-          <div className="flex justify-between items-center">
-            <span className="text-white/40 font-body text-sm">Total</span>
-            <span className="font-mono font-bold text-2xl text-cyan">{formatKobo(tx.amount)}</span>
+          <div className="flex justify-between items-center anim-count"
+               style={{ animationDelay: '0.3s' }}>
+            <span className="font-body text-caption-md text-ink-soft">Total</span>
+            <span className="font-display text-display-md text-ink">{formatKobo(tx.amount)}</span>
           </div>
         </div>
 
-        {/* ── State Banner ──────────────────────────────────────────────── */}
-        <div className={`rounded-2xl px-5 py-4 border text-center
-          ${isComplete
-            ? 'bg-emerald-500/10 border-emerald-500/20'
-            : 'bg-cyan/5 border-cyan/20'}`}>
-          <p className={`font-display font-semibold text-sm
-            ${isComplete ? 'text-emerald-400' : 'text-cyan'}`}>
+        {/* State banner */}
+        <div className={`rounded-xl px-lg py-md text-center border anim-scale-in
+          ${isComplete ? 'bg-emerald-50 border-emerald-200' : 'bg-hairline border-hairline'}`}
+             style={{ animationDelay: '0.1s' }}>
+          <p className={`font-display text-display-sm mb-xs
+            ${isComplete ? 'text-emerald-700' : 'text-primary'}`}>
             {stateCopy.headline}
           </p>
-          <p className="text-white/40 text-xs font-body mt-1">{stateCopy.sub}</p>
+          <p className={`font-body text-caption-md
+            ${isComplete ? 'text-emerald-600' : 'text-ink-soft'}`}>
+            {stateCopy.sub}
+          </p>
         </div>
 
-        {/* ── Escrow explanation pills ──────────────────────────────────── */}
+        {/* Escrow trust pills */}
         {isPayable && step === 'review' && (
-          <div className="space-y-2">
+          <div className="space-y-xs stagger-children">
             {[
-              { icon: '🔒', text: 'Your money is held securely — not sent to the seller yet' },
+              { icon: '🔒', text: 'Money is held securely — not sent to seller yet' },
               { icon: '✅', text: 'Funds release only when you confirm delivery' },
-              { icon: '🛡️', text: 'Dispute protection if something goes wrong' },
-            ].map(p => (
-              <div key={p.text} className="flex items-start gap-3 bg-navy-2 rounded-xl px-4 py-3
-                                           border border-white/5 text-sm text-white/50 font-body">
-                <span className="text-base flex-shrink-0">{p.icon}</span>
+              { icon: '🛡️', text: 'Full dispute protection if something goes wrong' },
+            ].map((p, i) => (
+              <div key={p.text}
+                className="anim-fade-up flex items-start gap-sm bg-canvas rounded-lg px-md py-sm
+                           border border-hairline text-caption-md font-body text-ink-soft
+                           hover:border-primary/20 hover:bg-cloud transition-all duration-200">
+                <span className="flex-shrink-0">{p.icon}</span>
                 <span>{p.text}</span>
               </div>
             ))}
           </div>
         )}
 
-        {/* ── Payment CTA / Form ────────────────────────────────────────── */}
+        {/* Pay CTA */}
         {isPayable && step === 'review' && (
           <button onClick={() => setStep('form')}
-            className="btn-primary w-full flex items-center justify-center gap-2 text-base py-4">
-            <Lock size={15} /> Pay {formatKobo(tx.amount)} securely
-            <ChevronRight size={16} />
+            className="btn-primary ripple-wrapper w-full flex items-center
+                       justify-center gap-sm !py-md anim-fade-up"
+            style={{ animationDelay: '0.15s' }}>
+            <Lock size={15}/> Pay {formatKobo(tx.amount)} securely
+            <ChevronRight size={15} className="ml-auto"/>
           </button>
         )}
 
+        {/* Payment form — slides in */}
         {isPayable && step === 'form' && (
-          <div className="card p-5 space-y-4">
-            <p className="font-display font-semibold text-sm mb-1">Your details</p>
-            <p className="text-white/30 text-xs font-body -mt-2">
-              Required so the seller can confirm your order.
-            </p>
-
+          <div className="card p-lg space-y-md anim-slide-right">
+            <div>
+              <p className="font-display text-display-sm text-ink mb-xs">Your details</p>
+              <p className="font-body text-caption-md text-ink-soft">
+                Required so the seller can confirm your order.
+              </p>
+            </div>
             {[
-              { key: 'buyer_name',  label: 'Full name',    type: 'text',  placeholder: 'Ayoola Orisasona' },
-              { key: 'buyer_email', label: 'Email',        type: 'email', placeholder: 'you@example.com' },
-              { key: 'buyer_phone', label: 'Phone number', type: 'tel',   placeholder: '+234 800 000 0000' },
-            ].map(f => (
-              <div key={f.key}>
-                <label className="block text-xs text-white/40 font-body mb-1.5">{f.label}</label>
-                <input className="input" type={f.type} placeholder={f.placeholder}
+              { key: 'buyer_name',  label: 'Full name',    type: 'text',  ph: 'Ayoola Orisasona' },
+              { key: 'buyer_email', label: 'Email address',type: 'email', ph: 'you@example.com' },
+              { key: 'buyer_phone', label: 'Phone number', type: 'tel',   ph: '+234 800 000 0000' },
+            ].map((f, i) => (
+              <div key={f.key} className="anim-fade-up" style={{ animationDelay: `${i * 0.06}s` }}>
+                <label className="block font-body text-caption-md text-ink font-medium mb-xs">{f.label}</label>
+                <input className="input" type={f.type} placeholder={f.ph}
                        value={form[f.key]}
-                       onChange={e => setForm(p => ({ ...p, [f.key]: e.target.value }))} />
+                       onChange={e => setForm(p => ({ ...p, [f.key]: e.target.value }))}/>
               </div>
             ))}
-
-            {payError && (
-              <div className="bg-red-500/10 border border-red-500/20 rounded-xl px-4 py-3
-                              text-red-400 text-sm font-body">
+            <div className={`overflow-hidden transition-all duration-200
+                             ${payError ? 'max-h-20 opacity-100' : 'max-h-0 opacity-0'}`}>
+              <div className="bg-red-50 border border-red-200 rounded-lg px-md py-sm
+                              text-red-700 font-body text-caption-md anim-toast">
                 {payError}
               </div>
-            )}
-
+            </div>
             <button onClick={handlePay} disabled={paying}
-              className="btn-primary w-full flex items-center justify-center gap-2 py-4">
+              className="btn-primary ripple-wrapper w-full flex items-center
+                         justify-center gap-xs !py-md">
               {paying
-                ? <span className="w-4 h-4 border-2 border-navy/40 border-t-navy rounded-full animate-spin" />
-                : <><Lock size={14} /> Confirm payment</>}
+                ? <span className="w-4 h-4 border-2 border-white/30 border-t-white rounded-full animate-spin"/>
+                : <><Lock size={14}/> Confirm payment</>}
             </button>
-
             <button onClick={() => setStep('review')}
-              className="w-full text-center text-xs text-white/20 font-body hover:text-white/40 transition-colors py-1">
+              className="w-full text-center font-body text-caption-sm text-ink-soft
+                         hover:text-ink cursor-pointer transition-colors duration-150 py-xs
+                         hover:-translate-x-1 inline-flex items-center justify-center gap-xs">
               ← Go back
             </button>
           </div>
         )}
 
-        {/* ── Post-payment: shipped, dispute ───────────────────────────── */}
+        {/* Shipped — confirm or dispute */}
         {isShipped && !disputing && (
-          <div className="space-y-3">
-            <p className="text-white/30 text-xs font-body text-center">
+          <div className="space-y-sm anim-fade-up">
+            <p className="font-body text-caption-md text-ink-soft text-center">
               Have you received your item?
             </p>
-            <button
-              onClick={async () => {
-                try {
-                  await api.post(`/transactions/${tx.id}/confirm`, { buyer_email: tx.buyer_email });
-                  const res = await api.get(`/transactions/${token}`);
-                  setData(res.data);
-                } catch (e) { alert(e.response?.data?.error || 'Failed.'); }
-              }}
-              className="btn-primary w-full flex items-center justify-center gap-2 py-4">
-              <CheckCircle size={16} /> Yes — release funds to seller
+            <button onClick={handleConfirm} disabled={confirmed}
+              className="btn-primary ripple-wrapper w-full flex items-center
+                         justify-center gap-xs !py-md">
+              {confirmed
+                ? <span className="w-4 h-4 border-2 border-white/30 border-t-white rounded-full animate-spin"/>
+                : <><CheckCircle size={16}/> Yes — release payment to seller</>}
             </button>
             <button onClick={() => setDisputing(true)}
-              className="w-full text-center text-xs text-red-400/60 hover:text-red-400 font-body transition-colors py-1">
+              className="w-full text-center font-body text-caption-sm text-red-500
+                         hover:text-red-600 cursor-pointer transition-colors duration-150 py-xs">
               I have a problem with this order
             </button>
           </div>
         )}
 
-        {/* ── Dispute form ──────────────────────────────────────────────── */}
+        {/* Dispute form — slides in */}
         {disputing && (
-          <div className="card border-red-500/20 p-5 space-y-4">
-            <p className="font-display font-semibold text-sm text-red-400">Raise a dispute</p>
-            <textarea
-              className="input min-h-[100px] resize-none"
-              placeholder="Describe what went wrong…"
-              value={disputeReason}
-              onChange={e => setDisputeReason(e.target.value)}
-            />
-            <div className="flex gap-3">
-              <button onClick={() => setDisputing(false)}
-                className="btn-ghost flex-1 text-sm !py-2.5">Cancel</button>
-              <button onClick={handleDispute} disabled={disputeSubmitting}
-                className="flex-1 bg-red-500/80 hover:bg-red-500 text-white font-display font-semibold
-                           text-sm py-2.5 rounded-xl transition-all active:scale-95">
-                {disputeSubmitting ? '…' : 'Submit dispute'}
+          <div className="card border-red-200 p-lg space-y-md anim-slide-right">
+            <p className="font-display text-display-sm text-red-600">Raise a dispute</p>
+            <textarea className="input min-h-[90px] resize-none"
+                      placeholder="Describe what went wrong…"
+                      value={disputeReason} onChange={e => setDisputeReason(e.target.value)}/>
+            <div className="flex gap-sm">
+              <button onClick={() => setDisputing(false)} className="btn-ghost-dark flex-1 !py-sm">
+                Cancel
+              </button>
+              <button onClick={handleDispute} disabled={disputeSub}
+                className="flex-1 bg-red-500 hover:bg-red-600 text-white font-body font-semibold
+                           text-caption-md py-sm rounded-pill cursor-pointer
+                           transition-all duration-200 active:scale-95">
+                {disputeSub ? '…' : 'Submit dispute'}
               </button>
             </div>
           </div>
         )}
 
-        {/* ── TrustFlow footer seal ─────────────────────────────────────── */}
-        <div className="flex items-center justify-center gap-2 pt-2 pb-4">
-          <Shield size={12} className="text-white/20" />
-          <span className="text-white/20 font-mono text-xs">
-            Secured by TrustFlow Escrow
-          </span>
+        {/* TrustFlow seal */}
+        <div className="flex items-center justify-center gap-xs py-sm
+                        anim-fade-up" style={{ animationDelay: '0.4s' }}>
+          <Shield size={12} className="text-ink-soft"/>
+          <span className="font-body text-caption-sm text-ink-soft">Secured by TrustFlow Escrow</span>
         </div>
       </div>
     </main>

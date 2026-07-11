@@ -1,58 +1,57 @@
-import { useState, useEffect, useCallback } from 'react';
+import { useState, useEffect, useCallback, useRef } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { Copy, Plus, X, CheckCircle, Clock, Truck, Ban, ExternalLink } from 'lucide-react';
+import { Plus, Copy, X, CheckCircle, Clock, Truck, Ban, ExternalLink, TrendingUp, ChevronRight } from 'lucide-react';
 import { useAuth } from '../context/AuthContext';
 import api from '../api/client';
 import TrustBadge from '../components/ui/TrustBadge';
 import StarRating from '../components/ui/StarRating';
 
 const STATE_META = {
-  CREATED:   { label: 'Awaiting payment', color: 'text-white/40',   icon: Clock      },
-  PAID:      { label: 'Paid — Ship now',  color: 'text-cyan',        icon: CheckCircle },
-  SHIPPED:   { label: 'Shipped',          color: 'text-blue-400',    icon: Truck      },
-  DELIVERED: { label: 'Delivered',        color: 'text-emerald-400', icon: CheckCircle },
-  RELEASED:  { label: 'Complete',         color: 'text-emerald-400', icon: CheckCircle },
-  DISPUTED:  { label: 'Disputed',         color: 'text-red-400',     icon: Ban        },
+  CREATED:   { label: 'Awaiting payment', color: 'text-ink-soft',    bg: 'bg-cloud',           icon: Clock       },
+  PAID:      { label: 'Paid — ship now',  color: 'text-primary',     bg: 'bg-hairline',        icon: CheckCircle },
+  SHIPPED:   { label: 'Shipped',          color: 'text-link',        bg: 'bg-blue-50',         icon: Truck       },
+  DELIVERED: { label: 'Delivered',        color: 'text-emerald-600', bg: 'bg-emerald-50',      icon: CheckCircle },
+  RELEASED:  { label: 'Complete',         color: 'text-emerald-600', bg: 'bg-emerald-50',      icon: CheckCircle },
+  DISPUTED:  { label: 'Disputed',         color: 'text-red-600',     bg: 'bg-red-50',          icon: Ban         },
 };
 
-function formatKobo(kobo) {
-  return `₦ ${(Number(kobo) / 100).toLocaleString('en-NG', { minimumFractionDigits: 2 })}`;
+function formatKobo(k) {
+  return `₦ ${(Number(k)/100).toLocaleString('en-NG',{minimumFractionDigits:0})}`;
+}
+
+/* Shimmer skeleton */
+function Skeleton({ className = '' }) {
+  return <div className={`shimmer rounded-lg ${className}`}/>;
 }
 
 export default function Dashboard() {
   const { user, loading: authLoading } = useAuth();
   const navigate = useNavigate();
-
   const [profile,      setProfile]      = useState(null);
   const [transactions, setTransactions] = useState([]);
   const [txLoading,    setTxLoading]    = useState(true);
   const [showModal,    setShowModal]    = useState(false);
   const [copied,       setCopied]       = useState('');
+  const [shippping,    setShipping]     = useState(null);
+  const [form,         setForm]         = useState({ item_description: '', amount: '' });
+  const [genLoading,   setGenLoading]   = useState(false);
+  const [genError,     setGenError]     = useState('');
+  const [newLink,      setNewLink]      = useState(null);
+  const progressRef = useRef(null);
 
-  // Link generator form
-  const [form,      setForm]      = useState({ item_description: '', amount: '' });
-  const [genLoading, setGenLoading] = useState(false);
-  const [genError,   setGenError]   = useState('');
-  const [newLink,    setNewLink]    = useState(null);
-
-  useEffect(() => {
-    if (!authLoading && !user) navigate('/auth');
-  }, [user, authLoading]);
+  useEffect(() => { if (!authLoading && !user) navigate('/auth'); }, [user, authLoading]);
 
   const fetchData = useCallback(async () => {
     if (!user) return;
     try {
-      const [profileRes, txRes] = await Promise.all([
+      const [pRes, tRes] = await Promise.all([
         api.get(`/merchants/${user.id}/profile`),
         api.get(`/merchants/${user.id}/transactions`),
       ]);
-      setProfile(profileRes.data.merchant);
-      setTransactions(txRes.data.transactions);
-    } catch (e) {
-      console.error(e);
-    } finally {
-      setTxLoading(false);
-    }
+      setProfile(pRes.data.merchant);
+      setTransactions(tRes.data.transactions);
+    } catch(e) { console.error(e); }
+    finally { setTxLoading(false); }
   }, [user]);
 
   useEffect(() => { fetchData(); }, [fetchData]);
@@ -65,94 +64,114 @@ export default function Dashboard() {
         setGenError('Enter a valid item name and amount.'); setGenLoading(false); return;
       }
       const { data } = await api.post('/transactions', {
-        item_description: form.item_description,
-        amount: amountKobo,
+        item_description: form.item_description, amount: amountKobo,
       });
       setNewLink(`${window.location.origin}/checkout/${data.transaction.checkout_token}`);
       setForm({ item_description: '', amount: '' });
       fetchData();
-    } catch (e) {
-      setGenError(e.response?.data?.error || 'Failed to generate link.');
-    } finally {
-      setGenLoading(false);
-    }
+    } catch(e) { setGenError(e.response?.data?.error || 'Failed to generate link.'); }
+    finally { setGenLoading(false); }
   };
 
-  const copyLink = (link) => {
+  const copyLink = link => {
     navigator.clipboard.writeText(link);
     setCopied(link);
     setTimeout(() => setCopied(''), 2000);
   };
 
-  const markShipped = async (id) => {
+  const markShipped = async id => {
+    setShipping(id);
     try { await api.post(`/transactions/${id}/ship`); fetchData(); }
-    catch (e) { alert(e.response?.data?.error || 'Failed to mark shipped'); }
+    catch(e) { alert(e.response?.data?.error || 'Failed'); }
+    finally { setShipping(null); }
   };
 
   if (authLoading || !user) return null;
 
-  const progress = profile
-    ? profile.next_tier
-      ? Math.round((profile.transaction_count / (profile.transaction_count + profile.remaining_to_next)) * 100)
-      : 100
-    : 0;
+  const progress = profile?.next_tier
+    ? Math.round((profile.transaction_count / (profile.transaction_count + profile.remaining_to_next)) * 100)
+    : 100;
 
   return (
-    <main className="min-h-screen pt-24 pb-16 px-6">
-      <div className="max-w-5xl mx-auto">
+    <main className="min-h-screen bg-cloud pt-28 pb-section">
+      <div className="container-content">
 
-        {/* ── Header ───────────────────────────────────────────────────── */}
-        <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 mb-10">
+        {/* ── Header ─────────────────────────────────────────────────────── */}
+        <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-md mb-xl anim-fade-up">
           <div>
-            <p className="text-white/30 font-body text-sm mb-1">Welcome back</p>
-            <h1 className="font-display font-bold text-2xl">{user.full_name}</h1>
+            <p className="font-body text-caption-md text-ink-soft mb-xs">Welcome back</p>
+            <h1 className="font-display text-display-md text-ink">{user.full_name}</h1>
           </div>
           <button onClick={() => { setShowModal(true); setNewLink(null); }}
-            className="btn-primary flex items-center gap-2 self-start sm:self-auto">
-            <Plus size={16} /> Generate checkout link
+            className="btn-primary ripple-wrapper self-start sm:self-auto
+                       flex items-center gap-xs">
+            <Plus size={15}/> Generate checkout link
           </button>
         </div>
 
-        {/* ── Trust Profile Card ────────────────────────────────────────── */}
-        {profile && (
-          <div className="card border-glow p-6 mb-6 grid sm:grid-cols-3 gap-6">
+        {/* ── Trust profile card ──────────────────────────────────────────── */}
+        {txLoading ? (
+          <div className="card p-xl mb-lg grid sm:grid-cols-3 gap-xl anim-fade-up"
+               style={{ animationDelay: '0.05s' }}>
+            <Skeleton className="h-24"/>
+            <Skeleton className="h-24"/>
+            <Skeleton className="h-24"/>
+          </div>
+        ) : profile && (
+          <div className="card p-xl mb-lg grid sm:grid-cols-3 gap-xl anim-fade-up"
+               style={{ animationDelay: '0.1s' }}>
+
             {/* Tier */}
-            <div className="flex flex-col gap-2">
-              <p className="text-xs font-mono text-white/30 uppercase tracking-widest">Trust Tier</p>
-              <TrustBadge tier={profile.tier} size="lg" />
+            <div>
+              <p className="font-body text-caption-sm text-ink-soft uppercase tracking-widest mb-sm">
+                Trust Tier
+              </p>
+              <div className="anim-badge-pop" style={{ animationDelay: '0.3s' }}>
+                <TrustBadge tier={profile.tier} size="lg"/>
+              </div>
               {profile.next_tier && (
-                <div className="mt-1">
-                  <div className="flex justify-between text-xs text-white/30 font-body mb-1">
+                <div className="mt-md">
+                  <div className="flex justify-between font-body text-caption-sm text-ink-soft mb-xs">
                     <span>{profile.transaction_count} sales</span>
                     <span>{profile.remaining_to_next} to {profile.next_tier}</span>
                   </div>
-                  <div className="h-1 bg-white/5 rounded-full overflow-hidden">
-                    <div className="h-full bg-cyan rounded-full transition-all duration-700"
-                         style={{ width: `${progress}%` }} />
+                  <div className="h-1.5 bg-cloud rounded-pill overflow-hidden">
+                    <div className="h-full bg-primary rounded-pill anim-progress-bar"
+                         style={{ '--progress': `${progress}%` }}/>
                   </div>
                 </div>
               )}
             </div>
 
             {/* Score */}
-            <div className="flex flex-col gap-2">
-              <p className="text-xs font-mono text-white/30 uppercase tracking-widest">Trust Score</p>
-              <p className="font-display font-bold text-3xl">{Number(profile.trust_score).toFixed(1)}</p>
-              <StarRating score={Number(profile.trust_score)} size="sm" />
+            <div>
+              <p className="font-body text-caption-sm text-ink-soft uppercase tracking-widest mb-sm">
+                Trust Score
+              </p>
+              <p className="font-display text-display-lg text-ink mb-xs anim-count"
+                 style={{ animationDelay: '0.2s' }}>
+                {Number(profile.trust_score).toFixed(1)}
+              </p>
+              <StarRating score={Number(profile.trust_score)}/>
             </div>
 
             {/* Stats */}
-            <div className="flex flex-col gap-3">
-              <p className="text-xs font-mono text-white/30 uppercase tracking-widest">Stats</p>
-              <div className="grid grid-cols-2 gap-3">
+            <div>
+              <p className="font-body text-caption-sm text-ink-soft uppercase tracking-widest mb-sm">
+                Activity
+              </p>
+              <div className="grid grid-cols-2 gap-sm stagger-children">
                 {[
                   { label: 'Completed', val: profile.transaction_count },
                   { label: 'Disputes',  val: profile.dispute_count },
                   { label: 'Volume',    val: formatKobo(profile.total_volume), span: true },
                 ].map(s => (
-                  <div key={s.label} className={`bg-navy-3 rounded-xl p-3 ${s.span ? 'col-span-2' : ''}`}>
-                    <p className="text-xs text-white/30 font-body mb-0.5">{s.label}</p>
-                    <p className="font-display font-semibold text-sm">{s.val}</p>
+                  <div key={s.label}
+                    className={`bg-cloud rounded-lg p-sm anim-fade-up
+                                hover:bg-paper transition-colors duration-200
+                                ${s.span ? 'col-span-2' : ''}`}>
+                    <p className="font-body text-caption-sm text-ink-soft">{s.label}</p>
+                    <p className="font-display text-display-sm text-ink mt-xs">{s.val}</p>
                   </div>
                 ))}
               </div>
@@ -160,57 +179,75 @@ export default function Dashboard() {
           </div>
         )}
 
-        {/* ── Transactions ─────────────────────────────────────────────── */}
-        <div className="card p-6">
-          <h2 className="font-display font-semibold text-base mb-4">Transactions</h2>
+        {/* ── Transactions ──────────────────────────────────────────────────── */}
+        <div className="card p-xl anim-fade-up" style={{ animationDelay: '0.15s' }}>
+          <div className="flex items-center justify-between mb-lg">
+            <h2 className="font-display text-display-sm text-ink">Transactions</h2>
+            <TrendingUp size={18} className="text-ink-soft"/>
+          </div>
 
           {txLoading ? (
-            <div className="py-12 text-center text-white/20 font-body text-sm">Loading…</div>
+            <div className="space-y-sm">
+              {[1,2,3].map(i => <Skeleton key={i} className="h-16"/>)}
+            </div>
           ) : transactions.length === 0 ? (
-            <div className="py-12 text-center">
-              <p className="text-white/20 font-body text-sm mb-3">No transactions yet.</p>
-              <button onClick={() => setShowModal(true)} className="text-cyan text-sm font-body hover:underline">
-                Generate your first checkout link →
+            <div className="py-xxl text-center anim-scale-in">
+              <p className="font-body text-body-md text-ink-soft mb-md">No transactions yet.</p>
+              <button onClick={() => setShowModal(true)}
+                className="font-body text-caption-md text-primary hover:text-primary-bright
+                           cursor-pointer transition-colors duration-150
+                           inline-flex items-center gap-xs group">
+                Generate your first checkout link
+                <ChevronRight size={13}
+                  className="transition-transform duration-150 group-hover:translate-x-1"/>
               </button>
             </div>
           ) : (
-            <div className="space-y-3">
-              {transactions.map(tx => {
+            <div className="space-y-sm stagger-children">
+              {transactions.map((tx, i) => {
                 const meta = STATE_META[tx.state] || STATE_META.CREATED;
                 const Icon = meta.icon;
+                const link = `${window.location.origin}/checkout/${tx.checkout_token}`;
                 return (
                   <div key={tx.id}
-                    className="flex flex-col sm:flex-row sm:items-center gap-3 p-4
-                               bg-navy-3 rounded-xl border border-white/5 hover:border-white/10 transition-colors">
+                    className="anim-fade-up flex flex-col sm:flex-row sm:items-center gap-sm p-md
+                               bg-cloud rounded-lg border border-hairline
+                               hover:border-primary/30 hover:bg-paper hover:-translate-y-0.5
+                               transition-all duration-200 cursor-default group">
                     <div className="flex-1 min-w-0">
-                      <p className="font-display font-medium text-sm truncate">{tx.item_description}</p>
-                      <p className="text-xs text-white/30 font-mono mt-0.5">
+                      <p className="font-body font-medium text-body-md text-ink truncate
+                                   group-hover:text-primary transition-colors duration-200">
+                        {tx.item_description}
+                      </p>
+                      <p className="font-body text-caption-sm text-ink-soft mt-xs">
                         {new Date(tx.created_at).toLocaleDateString('en-NG', { day: 'numeric', month: 'short', year: 'numeric' })}
                         {tx.buyer_name && ` · ${tx.buyer_name}`}
                       </p>
                     </div>
-
-                    <div className="flex items-center gap-3 flex-shrink-0">
-                      <span className="font-mono text-sm font-semibold">{formatKobo(tx.amount)}</span>
-
-                      <span className={`flex items-center gap-1 text-xs font-body ${meta.color}`}>
-                        <Icon size={12} /> {meta.label}
+                    <div className="flex items-center gap-sm flex-shrink-0">
+                      <span className="font-display text-display-sm text-ink">
+                        {formatKobo(tx.amount)}
                       </span>
-
+                      <span className={`inline-flex items-center gap-xs font-body text-caption-sm
+                                       px-sm py-xs rounded-pill transition-all duration-200
+                                       ${meta.color} ${meta.bg}`}>
+                        <Icon size={11}/> {meta.label}
+                      </span>
                       {tx.state === 'PAID' && (
                         <button onClick={() => markShipped(tx.id)}
-                          className="text-xs btn-primary !px-3 !py-1.5">
-                          Mark shipped
+                          disabled={shippping === tx.id}
+                          className="btn-primary ripple-wrapper !px-sm !py-xs !text-caption-sm">
+                          {shippping === tx.id
+                            ? <span className="w-3 h-3 border border-white/30 border-t-white rounded-full animate-spin"/>
+                            : 'Mark shipped'}
                         </button>
                       )}
-
-                      <button
-                        onClick={() => copyLink(`${window.location.origin}/checkout/${tx.checkout_token}`)}
-                        className="text-white/20 hover:text-cyan transition-colors"
-                        title="Copy checkout link">
-                        {copied === `${window.location.origin}/checkout/${tx.checkout_token}`
-                          ? <CheckCircle size={14} className="text-emerald-400" />
-                          : <Copy size={14} />}
+                      <button onClick={() => copyLink(link)}
+                        className="text-ink-soft hover:text-primary cursor-pointer
+                                   transition-all duration-150 p-xs hover:scale-110">
+                        {copied === link
+                          ? <CheckCircle size={15} className="text-emerald-500 anim-scale-in"/>
+                          : <Copy size={15}/>}
                       </button>
                     </div>
                   </div>
@@ -221,73 +258,84 @@ export default function Dashboard() {
         </div>
       </div>
 
-      {/* ── Link Generator Modal ──────────────────────────────────────── */}
+      {/* ── Modal ──────────────────────────────────────────────────────────── */}
       {showModal && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center px-6"
-             style={{ background: 'rgba(0,0,0,0.7)', backdropFilter: 'blur(4px)' }}>
-          <div className="card border-glow w-full max-w-md p-8 animate-fade-up">
-            <div className="flex items-center justify-between mb-6">
-              <h3 className="font-display font-bold text-lg">New checkout link</h3>
+        <div className="fixed inset-0 z-50 flex items-center justify-center px-lg anim-overlay"
+             style={{ background: 'rgba(1,46,55,0.45)', backdropFilter: 'blur(6px)' }}
+             onClick={e => { if (e.target === e.currentTarget) { setShowModal(false); setNewLink(null); } }}>
+          <div className="card p-xl w-full max-w-md anim-modal">
+            <div className="flex items-center justify-between mb-xl">
+              <h3 className="font-display text-display-sm text-ink">New checkout link</h3>
               <button onClick={() => { setShowModal(false); setNewLink(null); setGenError(''); }}
-                className="text-white/30 hover:text-white transition-colors">
-                <X size={20} />
+                className="text-ink-soft hover:text-ink cursor-pointer transition-all
+                           duration-150 p-xs hover:scale-110 hover:rotate-90">
+                <X size={20}/>
               </button>
             </div>
 
             {newLink ? (
-              <div className="space-y-4">
-                <div className="bg-emerald-500/10 border border-emerald-500/20 rounded-xl p-4 text-center">
-                  <CheckCircle size={24} className="text-emerald-400 mx-auto mb-2" />
-                  <p className="font-display font-semibold text-sm text-emerald-400 mb-1">Link ready</p>
-                  <p className="text-white/40 text-xs font-body">Share this with your buyer</p>
+              <div className="space-y-md anim-scale-in">
+                <div className="bg-emerald-50 border border-emerald-200 rounded-xl p-lg text-center">
+                  <CheckCircle size={28} className="text-emerald-500 mx-auto mb-sm anim-badge-pop"/>
+                  <p className="font-display text-display-sm text-emerald-700">Link ready</p>
+                  <p className="font-body text-caption-md text-emerald-600 mt-xs">Share this with your buyer</p>
                 </div>
-
-                <div className="bg-navy-3 rounded-xl px-4 py-3 flex items-center gap-3">
-                  <p className="font-mono text-xs text-cyan truncate flex-1">{newLink}</p>
+                <div className="bg-cloud rounded-lg px-md py-sm flex items-center
+                               gap-sm border border-hairline hover:border-primary/30
+                               transition-colors duration-200">
+                  <p className="font-body text-caption-md text-link truncate flex-1">{newLink}</p>
                   <button onClick={() => copyLink(newLink)}
-                    className="text-white/40 hover:text-cyan transition-colors flex-shrink-0">
-                    {copied === newLink ? <CheckCircle size={16} className="text-emerald-400" /> : <Copy size={16} />}
+                    className="text-ink-soft hover:text-primary cursor-pointer
+                               flex-shrink-0 transition-all duration-150 hover:scale-110">
+                    {copied === newLink
+                      ? <CheckCircle size={15} className="text-emerald-500 anim-scale-in"/>
+                      : <Copy size={15}/>}
                   </button>
                 </div>
-
-                <div className="flex gap-3">
+                <div className="flex gap-sm">
                   <a href={newLink} target="_blank" rel="noopener noreferrer"
-                    className="btn-ghost flex-1 flex items-center justify-center gap-1.5 text-sm !py-2.5">
-                    <ExternalLink size={13} /> Preview
+                    className="btn-ghost-dark flex-1 flex items-center justify-center gap-xs !py-sm">
+                    <ExternalLink size={13}/> Preview
                   </a>
                   <button onClick={() => { setShowModal(false); setNewLink(null); }}
-                    className="btn-primary flex-1 text-sm !py-2.5">
-                    Done
-                  </button>
+                    className="btn-primary ripple-wrapper flex-1 !py-sm">Done</button>
                 </div>
               </div>
             ) : (
-              <div className="space-y-4">
-                <div>
-                  <label className="block text-xs font-body text-white/40 mb-1.5">Item name</label>
+              <div className="space-y-md">
+                <div className="anim-fade-up">
+                  <label className="block font-body text-caption-md text-ink font-medium mb-xs">
+                    Item name
+                  </label>
                   <input className="input" placeholder="e.g. Nike Air Force 1 — Size 42"
                          value={form.item_description}
-                         onChange={e => setForm(f => ({ ...f, item_description: e.target.value }))} />
+                         onChange={e => setForm(f => ({ ...f, item_description: e.target.value }))}/>
                 </div>
-                <div>
-                  <label className="block text-xs font-body text-white/40 mb-1.5">Amount (₦)</label>
+                <div className="anim-fade-up" style={{ animationDelay: '0.05s' }}>
+                  <label className="block font-body text-caption-md text-ink font-medium mb-xs">
+                    Amount (₦)
+                  </label>
                   <input className="input" type="number" placeholder="65000"
                          value={form.amount}
-                         onChange={e => setForm(f => ({ ...f, amount: e.target.value }))} />
-                  <p className="text-xs text-white/20 font-body mt-1">Enter in full Naira — e.g. 65000 for ₦65,000</p>
+                         onChange={e => setForm(f => ({ ...f, amount: e.target.value }))}/>
+                  <p className="font-body text-caption-sm text-ink-soft mt-xs">
+                    Enter full Naira — e.g. 65000 for ₦65,000
+                  </p>
                 </div>
-
-                {genError && (
-                  <div className="bg-red-500/10 border border-red-500/20 rounded-xl px-4 py-3 text-red-400 text-sm">
+                <div className={`overflow-hidden transition-all duration-200
+                                 ${genError ? 'max-h-20 opacity-100' : 'max-h-0 opacity-0'}`}>
+                  <div className="bg-red-50 border border-red-200 rounded-lg px-md py-sm
+                                  text-red-700 font-body text-caption-md anim-toast">
                     {genError}
                   </div>
-                )}
-
+                </div>
                 <button onClick={generateLink} disabled={genLoading}
-                  className="btn-primary w-full flex items-center justify-center gap-2">
+                  className="btn-primary ripple-wrapper w-full flex items-center
+                             justify-center gap-xs !py-sm anim-fade-up"
+                  style={{ animationDelay: '0.1s' }}>
                   {genLoading
-                    ? <span className="inline-block w-4 h-4 border-2 border-navy/40 border-t-navy rounded-full animate-spin" />
-                    : <><Plus size={15} /> Generate link</>}
+                    ? <span className="w-4 h-4 border-2 border-white/30 border-t-white rounded-full animate-spin"/>
+                    : <><Plus size={15}/> Generate link</>}
                 </button>
               </div>
             )}
